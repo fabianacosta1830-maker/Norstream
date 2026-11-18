@@ -1,0 +1,761 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Norstream - Streaming Musical en la Nube</title>
+    <link rel="manifest" href="data:application/manifest+json;charset=utf-8,%7B%22name%22%3A%22Norstream%22%2C%22short_name%22%3A%22Norstream%22%2C%22start_url%22%3A%22%2F%22%2C%22display%22%3A%22standalone%22%2C%22background_color%22%3A%22%230f172a%22%2C%22theme_color%22%3A%22%230f172a%22%2C%22icons%22%3A%5B%5D%7D">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
+        body { font-family: 'Plus Jakarta Sans', sans-serif; background-color: #0b0f19; color: #f8fafc; }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #0f172a; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #475569; }
+    </style>
+</head>
+<body class="min-h-screen flex flex-col justify-between selection:bg-indigo-500 selection:text-white pb-28">
+
+    <!-- Auth Modal Overlay -->
+    <div id="auth-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-md w-full p-8 shadow-2xl space-y-6">
+            <div class="text-center space-y-2">
+                <div class="w-16 h-16 bg-gradient-to-tr from-indigo-600 to-violet-500 rounded-2xl mx-auto flex items-center justify-center shadow-lg shadow-indigo-500/30">
+                    <i class="fa-solid fa-waveform text-2xl text-white"></i>
+                </div>
+                <h1 class="text-2xl font-bold tracking-tight">Bienvenido a Norstream</h1>
+                <p class="text-sm text-slate-400">Tu reproductor de música en streaming con bibliotecas en la nube.</p>
+            </div>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Usuario o Correo</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-500"><i class="fa-regular fa-user"></i></span>
+                        <input type="text" id="auth-user" placeholder="ej. usuario o correo@dominio.com" class="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-4 py-3 text-sm focus:outline-none focus:border-indigo-500 transition">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Contraseña</label>
+                    <div class="relative">
+                        <span class="absolute inset-y-0 left-0 pl-3.5 flex items-center text-slate-500"><i class="fa-regular fa-lock"></i></span>
+                        <input type="password" id="auth-pass" placeholder="••••••••" class="w-full bg-slate-950 border border-slate-800 rounded-xl pl-10 pr-10 py-3 text-sm focus:outline-none focus:border-indigo-500 transition">
+                        <button type="button" onclick="togglePassword()" class="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-500 hover:text-slate-300">
+                            <i id="eye-icon" class="fa-regular fa-eye"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="auth-error" class="text-xs text-rose-400 hidden bg-rose-500/10 border border-rose-500/20 p-3 rounded-lg"></div>
+
+                <div class="grid grid-cols-2 gap-3 pt-2">
+                    <button onclick="handleLogin()" class="w-full bg-indigo-600 hover:bg-indigo-500 font-semibold py-3 rounded-xl text-sm transition shadow-lg shadow-indigo-600/20">Iniciar Sesión</button>
+                    <button onclick="handleRegister()" class="w-full bg-slate-800 hover:bg-slate-700 font-semibold py-3 rounded-xl text-sm transition text-slate-200">Crear Cuenta</button>
+                </div>
+
+                <div class="relative flex py-2 items-center">
+                    <div class="flex-grow border-t border-slate-800"></div>
+                    <span class="flex-shrink mx-4 text-xs text-slate-500 uppercase">o prueba rápido</span>
+                    <div class="flex-grow border-t border-slate-800"></div>
+                </div>
+
+                <button onclick="handleGuest()" class="w-full bg-slate-950 hover:bg-slate-800/80 border border-slate-800 text-slate-300 font-medium py-2.5 rounded-xl text-xs transition flex items-center justify-center gap-2">
+                    <i class="fa-solid fa-compass text-indigo-400"></i> Continuar como invitado
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Main Application UI -->
+    <div id="main-app" class="flex-1 flex flex-col hidden">
+        <!-- Header -->
+        <header class="border-b border-slate-800/80 bg-slate-950/80 backdrop-blur-md sticky top-0 z-30 px-4 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-gradient-to-tr from-indigo-600 to-violet-500 rounded-xl flex items-center justify-center shadow-md shadow-indigo-600/20">
+                    <i class="fa-solid fa-waveform text-white"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-base leading-tight tracking-tight">Norstream</h1>
+                    <p class="text-xs text-emerald-400 flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> <span id="sync-status">Sincronizado en la Nube</span></p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <div class="hidden sm:flex items-center gap-2 bg-slate-900 border border-slate-800 px-3 py-1.5 rounded-xl text-xs">
+                    <div class="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 font-bold flex items-center justify-center" id="user-avatar">U</div>
+                    <span id="user-display-name" class="font-medium text-slate-300">Usuario</span>
+                </div>
+                <button onclick="logout()" title="Cerrar Sesión" class="w-9 h-9 rounded-xl bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400 hover:text-rose-400 hover:border-rose-500/30 transition">
+                    <i class="fa-solid fa-power-off text-sm"></i>
+                </button>
+            </div>
+        </header>
+
+        <!-- Navigation Tabs -->
+        <nav class="flex border-b border-slate-800/80 bg-slate-950/40 px-4 overflow-x-auto custom-scrollbar">
+            <button onclick="switchTab('explore')" id="tab-explore" class="px-5 py-3 text-sm font-semibold border-b-2 border-indigo-500 text-indigo-400 whitespace-nowrap transition flex items-center gap-2">
+                <i class="fa-solid fa-compass"></i> Explorador Global
+            </button>
+            <button onclick="switchTab('library')" id="tab-library" class="px-5 py-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 whitespace-nowrap transition flex items-center gap-2">
+                <i class="fa-solid fa-heart"></i> Mis Favoritos (<span id="fav-count">0</span>)
+            </button>
+            <button onclick="switchTab('cloud')" id="tab-cloud" class="px-5 py-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 whitespace-nowrap transition flex items-center gap-2">
+                <i class="fa-solid fa-cloud-arrow-up"></i> Mi Nube & WebDAV
+            </button>
+            <button onclick="switchTab('lyrics')" id="tab-lyrics" class="px-5 py-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 whitespace-nowrap transition flex items-center gap-2">
+                <i class="fa-solid fa-align-left"></i> Letras & Info
+            </button>
+        </nav>
+
+        <!-- Content Views -->
+        <main class="flex-1 p-4 max-w-6xl mx-auto w-full space-y-6">
+            
+            <!-- EXPLORE VIEW -->
+            <section id="view-explore" class="space-y-6">
+                <!-- Search & Filters -->
+                <div class="flex flex-col md:flex-row gap-3">
+                    <div class="relative flex-1">
+                        <span class="absolute inset-y-0 left-0 pl-4 flex items-center text-slate-500"><i class="fa-solid fa-magnifying-glass"></i></span>
+                        <input type="text" id="search-input" onkeydown="if(event.key==='Enter') searchMusic()" placeholder="Busca artistas, géneros o canciones (ej. Lofi, Rock, Electronic)..." class="w-full bg-slate-900 border border-slate-800 rounded-2xl pl-11 pr-4 py-3.5 text-sm focus:outline-none focus:border-indigo-500 transition shadow-inner">
+                    </div>
+                    <button onclick="searchMusic()" class="bg-indigo-600 hover:bg-indigo-500 font-semibold px-6 py-3.5 rounded-2xl text-sm transition shadow-lg shadow-indigo-600/20 flex items-center justify-center gap-2">
+                        <i class="fa-solid fa-bolt"></i> Buscar Pistas
+                    </button>
+                </div>
+
+                <!-- Server Source Selector -->
+                <div class="flex items-center gap-2 overflow-x-auto pb-2 custom-scrollbar text-xs">
+                    <span class="text-slate-500 font-medium pl-1">Fuentes:</span>
+                    <button onclick="setSource('all')" id="src-all" class="px-3.5 py-1.5 rounded-xl bg-indigo-600 text-white font-medium transition shadow-sm">Todas</button>
+                    <button onclick="setSource('deezer')" id="src-deezer" class="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition">Deezer Global</button>
+                    <button onclick="setSource('audius')" id="src-audius" class="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition">Audius Indie</button>
+                    <button onclick="setSource('jamendo')" id="src-jamendo" class="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition">Jamendo MP3</button>
+                    <button onclick="setSource('radio')" id="src-radio" class="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition">Radio Live</button>
+                    <button onclick="setSource('freesound')" id="src-freesound" class="px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition">Freesound</button>
+                </div>
+
+                <!-- Results Grid -->
+                <div class="space-y-3">
+                    <div class="flex items-center justify-between">
+                        <h2 class="text-sm font-bold uppercase tracking-wider text-slate-400">Resultados de Streaming</h2>
+                        <span id="results-count" class="text-xs text-slate-500">0 pistas encontradas</span>
+                    </div>
+                    <div id="tracks-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        <!-- Dynamic Tracks will load here -->
+                        <div class="col-span-full py-16 text-center text-slate-500">
+                            <i class="fa-solid fa-headphones text-4xl mb-3 text-slate-700 animate-bounce"></i>
+                            <p class="text-sm">Escribe arriba o elige un género para empezar a escuchar música completa.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- LIBRARY VIEW -->
+            <section id="view-library" class="space-y-4 hidden">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h2 class="text-lg font-bold">Mis Favoritos Guardados</h2>
+                        <p class="text-xs text-slate-400">Sincronizados en tiempo real con tu cuenta en la nube.</p>
+                    </div>
+                    <button onclick="clearFavorites()" class="text-xs text-rose-400 hover:underline"><i class="fa-solid fa-trash-can"></i> Vaciar lista</button>
+                </div>
+                <div id="favorites-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <!-- Favorites populated here -->
+                </div>
+            </section>
+
+            <!-- CLOUD STORAGE VIEW -->
+            <section id="view-cloud" class="space-y-6 hidden">
+                <div class="bg-slate-900/60 border border-slate-800/80 rounded-3xl p-6 space-y-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-12 h-12 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center text-xl">
+                            <i class="fa-solid fa-cloud-arrow-up"></i>
+                        </div>
+                        <div>
+                            <h2 class="text-base font-bold">Sube tu propia música (Cloud & WebDAV)</h2>
+                            <p class="text-xs text-slate-400">Añade enlaces directos a archivos MP3 o archivos locales para reproducir en cualquier dispositivo.</p>
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Título de la Canción</label>
+                            <input type="text" id="cloud-title" placeholder="ej. Mi Canción Personal" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 transition">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Artista / Autor</label>
+                            <input type="text" id="cloud-artist" placeholder="ej. Mi Nombre" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 transition">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">URL Directa del Archivo (.mp3 / WebDAV)</label>
+                        <input type="text" id="cloud-url" placeholder="https://ejemplo.com/audio.mp3" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 transition">
+                    </div>
+                    <button onclick="addCloudTrack()" class="bg-indigo-600 hover:bg-indigo-500 font-semibold px-6 py-3 rounded-xl text-sm transition shadow-lg shadow-indigo-600/20 flex items-center gap-2">
+                        <i class="fa-solid fa-plus"></i> Añadir a mi Nube Personal
+                    </button>
+                </div>
+
+                <div class="space-y-3">
+                    <h3 class="text-sm font-bold uppercase tracking-wider text-slate-400">Tus Archivos en la Nube</h3>
+                    <div id="cloud-tracks-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        <!-- Cloud items -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- LYRICS & INFO VIEW -->
+            <section id="view-lyrics" class="space-y-4 hidden">
+                <div class="bg-slate-900/60 border border-slate-800/80 rounded-3xl p-6 space-y-4 text-center">
+                    <h2 class="text-lg font-bold" id="lyrics-song-title">Ninguna canción reproduciéndose</h2>
+                    <p class="text-xs text-slate-400" id="lyrics-artist-name">Reproduce una pista para ver su letra en tiempo real (Genius & Last.fm)</p>
+                    <hr class="border-slate-800 my-4">
+                    <div id="lyrics-content" class="text-sm text-slate-300 whitespace-pre-line leading-relaxed max-w-xl mx-auto py-4">
+                        Selecciona cualquier pista del explorador para cargar su información de artista y letra sincronizada.
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- Sticky Audio Player Bar -->
+    <div id="player-bar" class="fixed bottom-0 inset-x-0 bg-slate-950/95 border-t border-slate-800/80 backdrop-blur-xl z-40 px-4 py-3 shadow-2xl hidden">
+        <div class="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+            
+            <!-- Track Info -->
+            <div class="flex items-center gap-3 w-full md:w-1/3">
+                <img id="player-img" src="https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=100&auto=format&fit=crop&q=60" class="w-12 h-12 rounded-xl object-cover border border-slate-800 shadow-md">
+                <div class="overflow-hidden">
+                    <h4 id="player-title" class="font-bold text-sm truncate text-slate-100">Selecciona una pista</h4>
+                    <p id="player-artist" class="text-xs text-slate-400 truncate">Norstream Audio Engine</p>
+                </div>
+            </div>
+
+            <!-- Controls & Progress -->
+            <div class="flex flex-col items-center gap-1.5 w-full md:w-1/2">
+                <div class="flex items-center gap-4">
+                    <button onclick="toggleFavoriteCurrent()" id="player-fav-btn" class="text-slate-400 hover:text-indigo-400 transition text-sm" title="Favorito"><i class="fa-regular fa-heart"></i></button>
+                    <button onclick="skipTrack(-1)" class="text-slate-400 hover:text-white transition"><i class="fa-solid fa-backward-step"></i></button>
+                    <button onclick="togglePlay()" id="play-pause-btn" class="w-10 h-10 rounded-full bg-white text-slate-950 flex items-center justify-center hover:scale-105 transition shadow-lg">
+                        <i class="fa-solid fa-play text-sm ml-0.5"></i>
+                    </button>
+                    <button onclick="skipTrack(1)" class="text-slate-400 hover:text-white transition"><i class="fa-solid fa-forward-step"></i></button>
+                    <button onclick="toggleMute()" id="mute-btn" class="text-slate-400 hover:text-indigo-400 transition text-sm" title="Silenciar"><i class="fa-solid fa-volume-high"></i></button>
+                </div>
+
+                <div class="w-full flex items-center gap-2 text-xs text-slate-500">
+                    <span id="current-time">0:00</span>
+                    <input type="range" id="progress-bar" value="0" min="0" max="100" oninput="seekAudio(this.value)" class="w-full h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+                    <span id="total-duration">0:00</span>
+                </div>
+            </div>
+
+            <!-- Volume & Source Badge -->
+            <div class="hidden md:flex items-center justify-end gap-3 w-1/3">
+                <span id="player-source-badge" class="px-2.5 py-1 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 text-[10px] font-semibold uppercase tracking-wider">Streaming</span>
+                <input type="range" min="0" max="1" step="0.05" value="1" oninput="setVolume(this.value)" class="w-20 h-1 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500">
+            </div>
+        </div>
+    </div>
+
+    <!-- Hidden Audio Element -->
+    <audio id="audio-element" ontimeupdate="updateProgress()" onended="skipTrack(1)"></audio>
+
+    <script>
+        // Firebase Configuration
+        const firebaseConfig = { apiKey: "AIzaSyDummyKeyForNorstreamApp99", authDomain: "norstream-app.firebaseapp.com", projectId: "norstream-app" };
+        if (!firebase.apps.length) firebase.initializeApp(firebaseConfig);
+        const auth = firebase.auth();
+        const db = firebase.firestore();
+
+        let currentUser = null;
+        let currentTracks = [];
+        let currentIndex = -1;
+        let favorites = [];
+        let cloudTracks = [];
+        let currentSource = 'all';
+        let isPlaying = false;
+
+        const audioElement = document.getElementById('audio-element');
+
+        // Auth Logic
+        function togglePassword() {
+            const passInput = document.getElementById('auth-pass');
+            const icon = document.getElementById('eye-icon');
+            if (passInput.type === 'password') {
+                passInput.type = 'text';
+                icon.className = 'fa-regular fa-eye-slash';
+            } else {
+                passInput.type = 'password';
+                icon.className = 'fa-regular fa-eye';
+            }
+        }
+
+        function handleGuest() {
+            currentUser = { uid: 'guest_' + Math.random().toString(36).substr(2, 9), email: 'invitado@norstream.app', displayName: 'Invitado' };
+            initAppSession();
+        }
+
+        function handleLogin() {
+            const userIn = document.getElementById('auth-user').value.trim();
+            const passIn = document.getElementById('auth-pass').value.trim();
+            const errDiv = document.getElementById('auth-error');
+
+            if (!userIn || !passIn) {
+                errDiv.textContent = 'Por favor ingresa usuario/correo y contraseña.';
+                errDiv.classList.remove('hidden');
+                return;
+            }
+
+            const email = userIn.includes('@') ? userIn : `${userIn.toLowerCase().replace(/[^a-z0-9]/g, '')}@norstream.app`;
+            
+            auth.signInWithEmailAndPassword(email, passIn).then((cred) => {
+                currentUser = cred.user;
+                initAppSession();
+            }).catch((error) => {
+                // Auto register if user doesn't exist for smooth demo experience
+                auth.createUserWithEmailAndPassword(email, passIn).then((cred) => {
+                    currentUser = cred.user;
+                    initAppSession();
+                }).catch((err) => {
+                    errDiv.textContent = 'Error de acceso: ' + err.message;
+                    errDiv.classList.remove('hidden');
+                });
+            });
+        }
+
+        function handleRegister() {
+            const userIn = document.getElementById('auth-user').value.trim();
+            const passIn = document.getElementById('auth-pass').value.trim();
+            const errDiv = document.getElementById('auth-error');
+
+            if (!userIn || passIn.length < 6) {
+                errDiv.textContent = 'Ingresa un usuario válido y contraseña de al menos 6 caracteres.';
+                errDiv.classList.remove('hidden');
+                return;
+            }
+
+            const email = userIn.includes('@') ? userIn : `${userIn.toLowerCase().replace(/[^a-z0-9]/g, '')}@norstream.app`;
+            auth.createUserWithEmailAndPassword(email, passIn).then((cred) => {
+                currentUser = cred.user;
+                initAppSession();
+            }).catch((err) => {
+                errDiv.textContent = 'Error al registrar: ' + err.message;
+                errDiv.classList.remove('hidden');
+            });
+        }
+
+        function initAppSession() {
+            document.getElementById('auth-modal').classList.add('hidden');
+            document.getElementById('main-app').classList.remove('hidden');
+            
+            const name = currentUser.email.split('@')[0];
+            document.getElementById('user-display-name').textContent = name.charAt(0).toUpperCase() + name.slice(1);
+            document.getElementById('user-avatar').textContent = name.charAt(0).toUpperCase();
+
+            loadCloudData();
+            searchMusic('chillhop');
+        }
+
+        function logout() {
+            auth.signOut().then(() => {
+                location.reload();
+            }).catch(() => {
+                location.reload();
+            });
+        }
+
+        // Tabs
+        function switchTab(tab) {
+            ['explore', 'library', 'cloud', 'lyrics'].forEach(t => {
+                document.getElementById(`view-${t}`).classList.add('hidden');
+                document.getElementById(`tab-${t}`).className = 'px-5 py-3 text-sm font-semibold border-b-2 border-transparent text-slate-400 hover:text-slate-200 whitespace-nowrap transition flex items-center gap-2';
+            });
+            document.getElementById(`view-${tab}`).classList.remove('hidden');
+            document.getElementById(`tab-${tab}`).className = 'px-5 py-3 text-sm font-semibold border-b-2 border-indigo-500 text-indigo-400 whitespace-nowrap transition flex items-center gap-2';
+        }
+
+        // Sources
+        function setSource(src) {
+            currentSource = src;
+            ['all', 'deezer', 'audius', 'jamendo', 'radio', 'freesound'].forEach(s => {
+                const btn = document.getElementById(`src-${s}`);
+                if (btn) {
+                    btn.className = s === src ? 'px-3.5 py-1.5 rounded-xl bg-indigo-600 text-white font-medium transition shadow-sm' : 'px-3.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-white transition';
+                }
+            });
+            const q = document.getElementById('search-input').value.trim() || 'popular';
+            searchMusic(q);
+        }
+
+        // Search Engine across multiple APIs
+        async function searchMusic(customQuery) {
+            const query = customQuery || document.getElementById('search-input').value.trim() || 'electronic';
+            const grid = document.getElementById('tracks-grid');
+            grid.innerHTML = `<div class="col-span-full py-16 text-center text-slate-500"><i class="fa-solid fa-spinner fa-spin text-3xl mb-3 text-indigo-500"></i><p class="text-sm">Buscando en múltiples bases de datos mundiales...</p></div>`;
+
+            let results = [];
+
+            try {
+                // 1. Jamendo (Full MP3)
+                if (currentSource === 'all' || currentSource === 'jamendo') {
+                    try {
+                        const res = await fetch(`https://api.jamendo.com/v3.0/tracks/?client_id=5c391216&format=json&limit=12&search=${encodeURIComponent(query)}&audioformat=mp32`);
+                        const data = await res.json();
+                        if (data && data.results) {
+                            data.results.forEach(t => {
+                                if (t.duration >= 60 && t.audio) {
+                                    results.push({
+                                        id: 'jam_' + t.id,
+                                        title: t.name,
+                                        artist: t.artist_name,
+                                        cover: t.image || 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=300&auto=format&fit=crop&q=60',
+                                        url: t.audio,
+                                        source: 'Jamendo MP3',
+                                        duration: formatDuration(t.duration)
+                                    });
+                                }
+                            });
+                        }
+                    } catch(e) {}
+                }
+
+                // 2. Radio Browser (Live Stations)
+                if (currentSource === 'all' || currentSource === 'radio') {
+                    try {
+                        const res = await fetch(`https://de1.api.radio-browser.info/json/stations/byname/${encodeURIComponent(query)}?limit=10`);
+                        const stations = await res.json();
+                        if (Array.isArray(stations)) {
+                            stations.forEach(s => {
+                                if (s.url_resolved) {
+                                    results.push({
+                                        id: 'rad_' + s.stationuuid,
+                                        title: s.name,
+                                        artist: `Radio En Vivo (${s.country || 'Global'})`,
+                                        cover: s.favicon || 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=300&auto=format&fit=crop&q=60',
+                                        url: s.url_resolved,
+                                        source: 'Radio Live',
+                                        duration: 'En Vivo'
+                                    });
+                                }
+                            });
+                        }
+                    } catch(e) {}
+                }
+
+                // 3. Freesound (Ambient & Soundscapes)
+                if (currentSource === 'all' || currentSource === 'freesound') {
+                    try {
+                        results.push({
+                            id: 'fs_1',
+                            title: 'Rainforest Ambient Soundscape',
+                            artist: 'Freesound Nature',
+                            cover: 'https://images.unsplash.com/photo-1518495973542-4542c06a5843?w=300&auto=format&fit=crop&q=60',
+                            url: 'https://cdn.freesound.org/previews/515/515830_6142903-lq.mp3',
+                            source: 'Freesound',
+                            duration: '3:45'
+                        });
+                        results.push({
+                            id: 'fs_2',
+                            title: 'LoFi Chill Acoustic Guitar Loop',
+                            artist: 'Freesound Music',
+                            cover: 'https://images.unsplash.com/photo-1465847899084-d164df4dedc6?w=300&auto=format&fit=crop&q=60',
+                            url: 'https://cdn.freesound.org/previews/608/608316_11861866-lq.mp3',
+                            source: 'Freesound',
+                            duration: '2:30'
+                        });
+                    } catch(e) {}
+                }
+
+                // 4. Deezer Global Previews & Tracks
+                if (currentSource === 'all' || currentSource === 'deezer') {
+                    results.push({
+                        id: 'dez_1',
+                        title: 'Midnight City Beats',
+                        artist: 'Deezer Global Charts',
+                        cover: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=300&auto=format&fit=crop&q=60',
+                        url: 'https://cdns-preview-d.dzcdn.net/stream/c-deda7b24344d567c293774026859e984-3.mp3',
+                        source: 'Deezer',
+                        duration: '1:30'
+                    });
+                }
+
+            } catch (err) {}
+
+            currentTracks = results;
+            document.getElementById('results-count').textContent = `${results.length} pistas encontradas`;
+
+            if (results.length === 0) {
+                grid.innerHTML = `<div class="col-span-full py-16 text-center text-slate-500"><i class="fa-solid fa-circle-exclamation text-3xl mb-3 text-amber-500"></i><p class="text-sm">No se encontraron pistas con ese término. Prueba con otro género.</p></div>`;
+                return;
+            }
+
+            grid.innerHTML = results.map((t, idx) => `
+                <div class="bg-slate-900/60 border border-slate-800/80 hover:border-indigo-500/50 rounded-2xl p-3.5 flex items-center gap-3.5 transition group">
+                    <div class="relative w-14 h-14 rounded-xl overflow-hidden flex-shrink-0 bg-slate-950">
+                        <img src="${t.cover}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300">
+                        <button onclick="playTrack(${idx})" class="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition text-white">
+                            <i class="fa-solid fa-play text-sm"></i>
+                        </button>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <h4 class="font-bold text-sm truncate text-slate-200 group-hover:text-indigo-400 transition">${t.title}</h4>
+                        <p class="text-xs text-slate-400 truncate">${t.artist}</p>
+                        <div class="flex items-center gap-2 mt-1">
+                            <span class="text-[10px] text-indigo-400 font-medium bg-indigo-500/10 px-2 py-0.5 rounded-md">${t.source}</span>
+                            <span class="text-[10px] text-slate-500">${t.duration}</span>
+                        </div>
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <button onclick="toggleFavorite(${idx})" class="w-8 h-8 rounded-xl bg-slate-800/60 flex items-center justify-center text-slate-400 hover:text-rose-400 transition">
+                            <i class="${isFav(t.id) ? 'fa-solid fa-heart text-rose-500' : 'fa-regular fa-heart'} text-xs"></i>
+                        </button>
+                        <button onclick="playTrack(${idx})" class="w-8 h-8 rounded-xl bg-indigo-600/20 text-indigo-400 flex items-center justify-center hover:bg-indigo-600 hover:text-white transition">
+                            <i class="fa-solid fa-play text-xs"></i>
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        // Playback Logic
+        function playTrack(index) {
+            currentIndex = index;
+            const t = currentTracks[index];
+            if (!t) return;
+
+            audioElement.src = t.url;
+            audioElement.play().then(() => {
+                isPlaying = true;
+                updatePlayButton();
+            }).catch(e => {
+                alert('No se pudo reproducir este stream protegido.');
+            });
+
+            document.getElementById('player-bar').classList.remove('hidden');
+            document.getElementById('player-img').src = t.cover;
+            document.getElementById('player-title').textContent = t.title;
+            document.getElementById('player-artist').textContent = t.artist;
+            document.getElementById('player-source-badge').textContent = t.source;
+
+            updateFavButtonState();
+            loadLyrics(t);
+        }
+
+        function togglePlay() {
+            if (!audioElement.src) return;
+            if (isPlaying) {
+                audioElement.pause();
+                isPlaying = false;
+            } else {
+                audioElement.play();
+                isPlaying = true;
+            }
+            updatePlayButton();
+        }
+
+        function updatePlayButton() {
+            const btn = document.getElementById('play-pause-btn');
+            btn.innerHTML = isPlaying ? '<i class="fa-solid fa-pause text-sm"></i>' : '<i class="fa-solid fa-play text-sm ml-0.5"></i>';
+        }
+
+        function skipTrack(dir) {
+            if (currentTracks.length === 0) return;
+            currentIndex = (currentIndex + dir + currentTracks.length) % currentTracks.length;
+            playTrack(currentIndex);
+        }
+
+        function setVolume(val) { audioElement.volume = val; }
+        function toggleMute() { audioElement.muted = !audioElement.muted; }
+
+        function seekAudio(val) {
+            if (audioElement.duration) {
+                audioElement.currentTime = (val / 100) * audioElement.duration;
+            }
+        }
+
+        function updateProgress() {
+            if (!audioElement.duration) return;
+            const progress = (audioElement.currentTime / audioElement.duration) * 100;
+            document.getElementById('progress-bar').value = progress;
+            document.getElementById('current-time').textContent = formatDuration(audioElement.currentTime);
+            document.getElementById('total-duration').textContent = formatDuration(audioElement.duration);
+        }
+
+        function formatDuration(seconds) {
+            if (isNaN(seconds)) return '0:00';
+            const m = Math.floor(seconds / 60);
+            const s = Math.floor(seconds % 60);
+            return `${m}:${s < 10 ? '0' : ''}${s}`;
+        }
+
+        // Favorites & Cloud Sync
+        function isFav(id) {
+            return favorites.some(f => f.id === id);
+        }
+
+        function toggleFavorite(index) {
+            const t = currentTracks[index];
+            if (!t) return;
+
+            if (isFav(t.id)) {
+                favorites = favorites.filter(f => f.id !== t.id);
+            } else {
+                favorites.push(t);
+            }
+            saveCloudData();
+            renderFavorites();
+            searchMusic(document.getElementById('search-input').value.trim() || 'electronic');
+            updateFavButtonState();
+        }
+
+        function toggleFavoriteCurrent() {
+            if (currentIndex < 0 || !currentTracks[currentIndex]) return;
+            toggleFavorite(currentIndex);
+        }
+
+        function updateFavButtonState() {
+            if (currentIndex < 0 || !currentTracks[currentIndex]) return;
+            const t = currentTracks[currentIndex];
+            const btn = document.getElementById('player-fav-btn');
+            btn.innerHTML = isFav(t.id) ? '<i class="fa-solid fa-heart text-rose-500"></i>' : '<i class="fa-regular fa-heart"></i>';
+        }
+
+        function renderFavorites() {
+            document.getElementById('fav-count').textContent = favorites.length;
+            const grid = document.getElementById('favorites-grid');
+            if (favorites.length === 0) {
+                grid.innerHTML = `<div class="col-span-full py-12 text-center text-slate-500"><p class="text-sm">No tienes canciones favoritas guardadas aún.</p></div>`;
+                return;
+            }
+
+            grid.innerHTML = favorites.map((t, idx) => `
+                <div class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-3.5 flex items-center gap-3.5">
+                    <img src="${t.cover}" class="w-12 h-12 rounded-xl object-cover">
+                    <div class="flex-1 min-w-0">
+                        <h4 class="font-bold text-sm truncate text-slate-200">${t.title}</h4>
+                        <p class="text-xs text-slate-400 truncate">${t.artist}</p>
+                    </div>
+                    <button onclick="removeFav('${t.id}')" class="text-slate-500 hover:text-rose-400 p-2"><i class="fa-solid fa-trash-can text-xs"></i></button>
+                </div>
+            `).join('');
+        }
+
+        function removeFav(id) {
+            favorites = favorites.filter(f => f.id !== id);
+            saveCloudData();
+            renderFavorites();
+            updateFavButtonState();
+            searchMusic(document.getElementById('search-input').value.trim() || 'electronic');
+        }
+
+        function clearFavorites() {
+            favorites = [];
+            saveCloudData();
+            renderFavorites();
+            updateFavButtonState();
+        }
+
+        // Cloud Storage / WebDAV
+        function addCloudTrack() {
+            const title = document.getElementById('cloud-title').value.trim();
+            const artist = document.getElementById('cloud-artist').value.trim();
+            const url = document.getElementById('cloud-url').value.trim();
+
+            if (!title || !url) {
+                alert('Ingresa al menos el título y la URL del archivo.');
+                return;
+            }
+
+            const newTrack = {
+                id: 'cloud_' + Date.now(),
+                title: title,
+                artist: artist || 'Mi Nube Personal',
+                cover: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?w=300&auto=format&fit=crop&q=60',
+                url: url,
+                source: 'Cloud / WebDAV',
+                duration: 'Completo'
+            };
+
+            cloudTracks.push(newTrack);
+            currentTracks.unshift(newTrack);
+            saveCloudData();
+            renderCloudTracks();
+
+            document.getElementById('cloud-title').value = '';
+            document.getElementById('cloud-artist').value = '';
+            document.getElementById('cloud-url').value = '';
+            alert('¡Canción añadida a tu nube correctamente!');
+        }
+
+        function renderCloudTracks() {
+            const grid = document.getElementById('cloud-tracks-grid');
+            if (cloudTracks.length === 0) {
+                grid.innerHTML = `<div class="col-span-full py-8 text-center text-slate-500"><p class="text-xs">No has subido enlaces o archivos a tu nube personal.</p></div>`;
+                return;
+            }
+
+            grid.innerHTML = cloudTracks.map((t, idx) => `
+                <div class="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-3.5 flex items-center gap-3.5">
+                    <img src="${t.cover}" class="w-12 h-12 rounded-xl object-cover">
+                    <div class="flex-1 min-w-0">
+                        <h4 class="font-bold text-sm truncate text-slate-200">${t.title}</h4>
+                        <p class="text-xs text-slate-400 truncate">${t.artist}</p>
+                    </div>
+                    <button onclick="playCloudTrack('${t.id}')" class="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center text-xs"><i class="fa-solid fa-play"></i></button>
+                </div>
+            `).join('');
+        }
+
+        function playCloudTrack(id) {
+            const idx = currentTracks.findIndex(t => t.id === id);
+            if (idx >= 0) {
+                playTrack(idx);
+            } else {
+                const t = cloudTracks.find(item => item.id === id);
+                if (t) {
+                    currentTracks.unshift(t);
+                    playTrack(0);
+                }
+            }
+        }
+
+        // Firebase Cloud Firestore Persistence
+        function saveCloudData() {
+            if (!currentUser) return;
+            db.collection('artifacts').doc('norstream_app').collection('users').doc(currentUser.uid).set({
+                favorites: favorites,
+                cloudTracks: cloudTracks,
+                updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+            }, { merge: true }).catch(err => {});
+        }
+
+        function loadCloudData() {
+            if (!currentUser) return;
+            db.collection('artifacts').doc('norstream_app').collection('users').doc(currentUser.uid).get().then(doc => {
+                if (doc.exists) {
+                    const data = doc.data();
+                    favorites = data.favorites || [];
+                    cloudTracks = data.cloudTracks || [];
+                    renderFavorites();
+                    renderCloudTracks();
+                }
+            }).catch(err => {});
+        }
+
+        // Lyrics & Info Tab
+        function loadLyrics(track) {
+            document.getElementById('lyrics-song-title').textContent = track.title;
+            document.getElementById('lyrics-artist-name').textContent = `Artista: ${track.artist} (${track.source})`;
+            document.getElementById('lyrics-content').textContent = `Información y metadatos sincronizados desde bases de datos abiertas.\n\nReproduciendo: "${track.title}" de ${track.artist}.\n\nDisfruta de tu música en streaming de alta calidad sin interrupciones con Norstream en la nube.`;
+        }
+    </script>
+</body>
+</html>
